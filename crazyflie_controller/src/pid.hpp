@@ -69,6 +69,31 @@ public:
         return std::max(std::min(output, m_maxOutput), m_minOutput);
     }
 
+  float update(float value, float targetValue, float derivative)
+    {
+        ros::Time time = ros::Time::now();
+        float dt = time.toSec() - m_previousTime.toSec();
+        float error = targetValue - value;
+        m_integral += error * dt;
+        m_integral = std::max(std::min(m_integral, m_integratorMax), m_integratorMin);
+        float p = m_kp * error;
+        float d = 0;
+        if (dt > 0)
+        {
+            d = m_kd * derivative;
+        }
+        float i = m_ki * m_integral;
+        float output = p + d + i;
+        m_previousError = error;
+        m_previousTime = time;
+        // self.pubOutput.publish(output)
+        // self.pubError.publish(error)
+        // self.pubP.publish(p)
+        // self.pubD.publish(d)
+        // self.pubI.publish(i)
+        return std::max(std::min(output, m_maxOutput), m_minOutput);
+    }
+
 private:
     float m_kp;
     float m_kd;

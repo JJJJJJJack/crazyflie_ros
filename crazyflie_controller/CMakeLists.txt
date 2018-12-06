@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(crazyflie_controller)
 
+set (CMAKE_CXX_STANDARD 11)
+
 find_package(catkin REQUIRED COMPONENTS
   std_msgs
   tf
@@ -101,6 +103,12 @@ include_directories(
 add_executable(crazyflie_controller
   src/controller.cpp)
 
+add_executable(crazyflie_LQRcontroller
+  src/lqr_pendulum.cpp)
+
+add_executable(ge_teststand
+  src/ge_teststand.cpp)
+
 # Add cmake target dependencies of the executable/library
 # as an example, message headers may need to be generated before nodes
 # add_dependencies(crazyflie_controller crazyflie_controller_generate_messages_cpp)
@@ -109,6 +117,15 @@ add_executable(crazyflie_controller
 target_link_libraries(crazyflie_controller
   ${catkin_LIBRARIES}
 )
+
+target_link_libraries(crazyflie_LQRcontroller
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(ge_teststand
+  ${catkin_LIBRARIES}
+)
+
 
 #############
 ## Install ##

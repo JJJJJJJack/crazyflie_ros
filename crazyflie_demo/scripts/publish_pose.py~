@@ -85,7 +85,7 @@ if __name__ == '__main__':
                     (trans,rot) = listener.lookupTransform("/world", "goal", rospy.Time(0))
                 except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                     continue
-                msg.pose.position.x = _saturate(trans[0], 1.6, -1.4)
+                msg.pose.position.x = _saturate(trans[0], 2.2, -1.4)
                 msg.pose.position.y = _saturate(trans[1], 1.25, -1.35)
                 msg.pose.position.z = _saturate(trans[2], 2, 0.5)
             else:

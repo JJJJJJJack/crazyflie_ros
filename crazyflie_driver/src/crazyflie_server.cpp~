@@ -9,7 +9,6 @@
 #include "crazyflie_driver/FullState.h"
 #include "crazyflie_driver/sendPacket.h"
 #include "crazyflie_driver/crtpPacket.h"
-#include "crazyflie_driver/ANDO.h"
 #include "crazyflie_cpp/Crazyradio.h"
 #include "crazyflie_cpp/crtp.h"
 #include "std_srvs/Empty.h"
@@ -26,7 +25,6 @@
 
 #include <string>
 #include <map>
-#include <cstdint>
 
 #include <crazyflie_cpp/Crazyflie.h>
 
@@ -57,15 +55,12 @@ public:
     bool enable_logging_magnetic_field,
     bool enable_logging_pressure,
     bool enable_logging_battery,
-    bool enable_logging_packets,
-    bool enable_logging_ando)
+    bool enable_logging_packets)
     : m_cf(link_uri)
     , m_tf_prefix(tf_prefix)
     , m_isEmergency(false)
     , m_roll_trim(roll_trim)
     , m_pitch_trim(pitch_trim)
-    , m_dhat()
-    , m_motor()
     , m_enableLogging(enable_logging)
     , m_enableParameters(enable_parameters)
     , m_logBlocks(log_blocks)
@@ -76,7 +71,6 @@ public:
     , m_enable_logging_pressure(enable_logging_pressure)
     , m_enable_logging_battery(enable_logging_battery)
     , m_enable_logging_packets(enable_logging_packets)
-    , m_enable_logging_ando(enable_logging_ando)
     , m_serviceEmergency()
     , m_serviceUpdateParams()
     , m_subscribeCmdVel()
@@ -87,7 +81,6 @@ public:
     , m_pubMag()
     , m_pubPressure()
     , m_pubBattery()
-    , m_pubANDO()
     , m_pubRssi()
     , m_sentSetpoint(false)
     , m_sentExternalPosition(false)
@@ -168,27 +161,6 @@ private:
     float pm_vbat;
   } __attribute__((packed));
 
-  struct logDHAT {
-    float dhatx;
-    float dhaty;
-    float dhatz;
-    float dhatw;
-  } __attribute__((packed));
-
-  struct logCompensatePWM {
-    int16_t roll;
-    int16_t pitch;
-    int16_t yaw;
-    float thrust;
-  } __attribute__((packed));
-
-  struct logMOTOR {
-    uint32_t M1;
-    uint32_t M2;
-    uint32_t M3;
-    uint32_t M4;
-  } __attribute__((packed));
-
 private:
   bool emergency(
     std_srvs::Empty::Request& req,
@@ -202,9 +174,9 @@ private:
 
   template<class T, class U>
   void updateParam(uint8_t id, const std::string& ros_param) {
-    U value;
-    ros::param::get(ros_param, value);
-    m_cf.setParam<T>(id, (T)value);
+      U value;
+      ros::param::get(ros_param, value);
+      m_cf.setParam<T>(id, (T)value);
   }
 
   bool updateParams(
@@ -335,9 +307,6 @@ private:
     if (m_enable_logging_packets) {
       m_pubPackets = n.advertise<crazyflie_driver::crtpPacket>(m_tf_prefix + "/packets", 10);
     }
-    if (m_enable_logging_ando) {
-      m_pubANDO = n.advertise<crazyflie_driver::ANDO>(m_tf_prefix + "/ANDO", 10);
-    }
     m_pubRssi = n.advertise<std_msgs::Float32>(m_tf_prefix + "/rssi", 10);
 
     for (auto& logBlock : m_logBlocks)
@@ -346,11 +315,11 @@ private:
     }
 
     m_sendPacketServer = n.advertiseService(m_tf_prefix + "/send_packet"  , &CrazyflieROS::sendPacket, this);
-
+    std::cout<<"Up to here!!!!!"<<std::endl<<std::endl;
     // m_cf.reboot();
 
     auto start = std::chrono::system_clock::now();
-    std::cout<<"Up to here!!!!!"<<std::endl<<std::endl;
+
     m_cf.logReset();
 
     std::function<void(float)> cb_lq = std::bind(&CrazyflieROS::onLinkQuality, this, std::placeholders::_1);
@@ -394,9 +363,6 @@ private:
 
     std::unique_ptr<LogBlock<logImu> > logBlockImu;
     std::unique_ptr<LogBlock<log2> > logBlock2;
-    std::unique_ptr<LogBlock<logDHAT> > logBlockDHAT;
-    std::unique_ptr<LogBlock<logCompensatePWM> > logBlockCompensatePWM;
-    std::unique_ptr<LogBlock<logMOTOR> > logBlockMOTOR;
     std::vector<std::unique_ptr<LogBlockGeneric> > logBlocksGeneric(m_logBlocks.size());
     if (m_enableLogging) {
 
@@ -438,39 +404,6 @@ private:
             {"pm", "vbat"},
           }, cb2));
         logBlock2->start(10); // 100ms
-      }
-
-      // Add custom logging for ANDO
-      if (m_enable_logging_ando)
-      {
-        std::function<void(uint32_t, logDHAT*)> cbdhat         = std::bind(&CrazyflieROS::onLogDHATData, this, std::placeholders::_1, std::placeholders::_2);
-        std::function<void(uint32_t, logCompensatePWM*)> cbpwm = std::bind(&CrazyflieROS::onLogCompensatePWMData, this, std::placeholders::_1, std::placeholders::_2);
-        std::function<void(uint32_t, logMOTOR*)> cbmotor       = std::bind(&CrazyflieROS::onLogMOTORData, this, std::placeholders::_1, std::placeholders::_2);
-
-        logBlockDHAT.reset(new LogBlock<logDHAT>(
-          &m_cf,{
-            {"ANDO", "dhatx"},
-            {"ANDO", "dhaty"},
-            {"ANDO", "dhatz"},
-            {"ANDO", "dhatw"},
-          }, cbdhat));
-        logBlockDHAT->start(2); // 20ms 50Hz
-        logBlockCompensatePWM.reset(new LogBlock<logCompensatePWM>(
-          &m_cf,{
-            {"ANDO", "pwm_roll"},
-            {"ANDO", "pwm_pitch"},
-            {"ANDO", "pwm_yaw"},
-            {"ANDO", "pwm_thrust"},
-          }, cbpwm));
-        logBlockCompensatePWM->start(2); // 20ms 50Hz
-        logBlockMOTOR.reset(new LogBlock<logMOTOR>(
-          &m_cf,{
-            {"motor", "m1"},
-            {"motor", "m2"},
-            {"motor", "m3"},
-            {"motor", "m4"},
-          }, cbmotor));
-        logBlockMOTOR->start(2); // 20ms 50Hz
       }
 
       // custom log blocks
@@ -602,47 +535,6 @@ private:
     }
   }
 
-  // Jack logging additional ando data
-  void onLogDHATData(uint32_t time_in_ms, logDHAT* data) {
-    if (m_enable_logging_ando) {
-      m_dhat.x = data->dhatx;
-      m_dhat.y = data->dhaty;
-      m_dhat.z = data->dhatz;
-      m_dhat.w = data->dhatw;
-    }
-  }
-
-  void onLogCompensatePWMData(uint32_t time_in_ms, logCompensatePWM* data) {
-    if (m_enable_logging_ando) {
-      crazyflie_driver::ANDO msg;
-      if (m_use_ros_time) {
-	msg.header.stamp = ros::Time::now();
-      } else {
-        msg.header.stamp = ros::Time(time_in_ms / 1000.0);
-      }
-      msg.header.frame_id = m_tf_prefix + "/base_link";
-      msg.dhat   = m_dhat;
-      msg.M1     = m_motor.M1;
-      msg.M2     = m_motor.M2;
-      msg.M3     = m_motor.M3;
-      msg.M4     = m_motor.M4;
-      msg.roll   = data->roll;
-      msg.pitch  = data->pitch;
-      msg.yaw    = data->yaw;
-      msg.thrust = data->thrust;
-      m_pubANDO.publish(msg);
-    }
-  }
-
-  void onLogMOTORData(uint32_t time_in_ms, logMOTOR* data) {
-    if (m_enable_logging_ando) {
-      m_motor.M1 = data->M1;
-      m_motor.M2 = data->M2;
-      m_motor.M3 = data->M3;
-      m_motor.M4 = data->M4;
-    }
-  }
-
   void onLogCustom(uint32_t time_in_ms, std::vector<double>* values, void* userData) {
 
     ros::Publisher* pub = reinterpret_cast<ros::Publisher*>(userData);
@@ -678,8 +570,6 @@ private:
   bool m_isEmergency;
   float m_roll_trim;
   float m_pitch_trim;
-  geometry_msgs::Quaternion m_dhat;
-  logMOTOR m_motor;
   bool m_enableLogging;
   bool m_enableParameters;
   std::vector<crazyflie_driver::LogBlock> m_logBlocks;
@@ -690,7 +580,6 @@ private:
   bool m_enable_logging_pressure;
   bool m_enable_logging_battery;
   bool m_enable_logging_packets;
-  bool m_enable_logging_ando;
 
   ros::ServiceServer m_serviceEmergency;
   ros::ServiceServer m_serviceUpdateParams;
@@ -703,7 +592,6 @@ private:
   ros::Publisher m_pubPressure;
   ros::Publisher m_pubBattery;
   ros::Publisher m_pubPackets;
-  ros::Publisher m_pubANDO;
   ros::Publisher m_pubRssi;
   std::vector<ros::Publisher> m_pubLogDataGeneric;
 
@@ -748,8 +636,7 @@ bool add_crazyflie(
     req.enable_logging_magnetic_field,
     req.enable_logging_pressure,
     req.enable_logging_battery,
-    req.enable_logging_packets,
-    req.enable_logging_ando);
+    req.enable_logging_packets);
 
   crazyflies[req.uri] = cf;
 

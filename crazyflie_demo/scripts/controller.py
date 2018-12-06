@@ -52,6 +52,26 @@ class Controller():
                         rospy.set_param("ring/headlightEnable", 0)
                     self._update_params(["ring/headlightEnable"])
                     print(not value)
+                if i == 3 and data.buttons[i] == 1:
+                    value = int(rospy.get_param("ANDO_PARAM/calc_ando"))
+                    if value == 0:
+                        rospy.set_param("ANDO_PARAM/calc_ando", 1)
+                        print("Enable ANDO from remote controller")
+                    else:
+                        rospy.set_param("ANDO_PARAM/calc_ando", 0)
+                        print("Disable ANDO from remote controller")
+                    self._update_params(["ANDO_PARAM/calc_ando"])
+                if i == 6 and data.buttons[i] == 1:
+                    value = int(rospy.get_param("ACRO/roll_flip", 1))
+                    rospy.set_param("ACRO/roll_flip", 1)
+                    print("Roll Flip!!!")
+                    self._update_params(["ACRO/roll_flip"])
+                if i == 4 and data.buttons[i] == 1:
+                    value = int(rospy.get_param("ACRO/pitch_flip", 1))
+                    rospy.set_param("ACRO/pitch_flip", 1)
+                    print("Pitch Flip!!!")
+                    self._update_params(["ACRO/pitch_flip"])
+
 
         self._buttons = data.buttons
 

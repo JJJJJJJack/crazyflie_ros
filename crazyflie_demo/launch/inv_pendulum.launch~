@@ -6,7 +6,7 @@
   <arg name="bag_name" default="bag_name"/>
   <arg name="x" default="0" />
   <arg name="y" default="0" />
-  <arg name="z" default="2.5" />
+  <arg name="z" default="0.75" />
   <arg name="wand_enable" default="False"/>
   <arg name="wand_name" default="vicon/Wand/Wand"/>
 
@@ -31,7 +31,7 @@
       <param name="ACRO/pitch_flip" value="True" />
     </node>
 
-    <include file="$(find crazyflie_controller)/launch/crazyflie2.launch">
+    <include file="$(find crazyflie_controller)/launch/inv_pendulum.launch">
       <arg name="frame" value="$(arg frame)" />
     </include>
 
