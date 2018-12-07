@@ -1,11 +1,18 @@
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
+#include <tf/transform_broadcaster.h>
+#include <tf/tf.h>
 #include <std_srvs/Empty.h>
 #include <geometry_msgs/Twist.h>
 #include <sensor_msgs/Joy.h>
-
+#include <time.h>
+#include <cmath>
 
 #include "pid.hpp"
+
+#define DIRECT_GE_COMPENSATE
+
+using namespace std;
 
 double get(
     const ros::NodeHandle& n,
@@ -15,7 +22,7 @@ double get(
     return value;
 }
 
-struct {
+struct JOY {
     float x;
     float y;
     float z;
@@ -33,6 +40,7 @@ public:
         : m_worldFrame(worldFrame)
         , m_frame(frame)
         , m_pubNav()
+	, m_pubPose()
         , m_listener()
         , m_pidX(
             get(n, "PIDs/X/kp"),
@@ -83,6 +91,7 @@ public:
         ros::NodeHandle nh;
         m_listener.waitForTransform(m_worldFrame, m_frame, ros::Time(0), ros::Duration(10.0)); 
         m_pubNav = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
+	m_pubPose = nh.advertise<geometry_msgs::TransformStamped>("pose", 1);
         m_subscribeGoal = nh.subscribe("goal", 1, &Controller::goalChanged, this);
         m_subscribeJoy  = nh.subscribe("joy", 1, &Controller::subscribeJoy, this);
         m_serviceTakeoff = nh.advertiseService("takeoff", &Controller::takeoff, this);
@@ -116,15 +125,16 @@ private:
     void goalChanged(
         const geometry_msgs::PoseStamped::ConstPtr& msg)
     {
-        m_goal = *msg;
+        if(m_state != Landing)
+	  m_goal = *msg;
     }
     
     void subscribeJoy(
         const sensor_msgs::JoyConstPtr& msg)
     {
         m_joy = *msg;
-        Joy_input.x   =  m_joy.axes[4]*10.f;
-        Joy_input.y   = -m_joy.axes[3]*10.f;
+        Joy_input.x   =  m_joy.axes[4]*30.f;
+        Joy_input.y   = -m_joy.axes[3]*30.f;
         Joy_input.z   =  m_joy.axes[1]*50000.f;
         Joy_input.yaw = -m_joy.axes[0]*30.f;
     }
@@ -134,7 +144,8 @@ private:
         std_srvs::Empty::Response& res)
     {
         ROS_INFO("Takeoff requested!");
-        m_state = TakingOff;
+	if (m_state != Automatic)
+	  m_state = TakingOff;
 
         tf::StampedTransform transform;
         m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
@@ -168,17 +179,35 @@ private:
         m_pidZ.reset();
         m_pidYaw.reset();
     }
+  
+    float saturate(float input, float max, float min)
+    {
+      return (input>max?max:input)<min?min:input;
+    }
+
+    float compensate_GE(float input, float height)
+    {
+      float GE_a = 0.4423;
+      float GE_b = -18.0;
+      float kG = GE_a*exp(GE_b*height)+1.0f;
+      return input/sqrt(kG);
+    }
 
     void iteration(const ros::TimerEvent& e)
     {
         float dt = e.current_real.toSec() - e.last_real.toSec();
-        
+	// My code here
+	
         switch(m_state)
         {
         case TakingOff:
             {
                 tf::StampedTransform transform;
                 m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
+		geometry_msgs::TransformStamped pose;
+		tf::transformStampedTFToMsg(transform, pose);
+		m_pubPose.publish(pose);
+
                 if (transform.getOrigin().z() > m_startZ + 0.05 || m_thrust > 50000)
                 {
                     pidReset();
@@ -198,9 +227,14 @@ private:
             break;
         case Landing:
             {
-                m_goal.pose.position.z = m_startZ + 0.05;
+	        m_goal.pose.position.z -= 0.2*dt;
+	        //m_goal.pose.position.z = m_startZ + 0.05;
                 tf::StampedTransform transform;
                 m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
+		geometry_msgs::TransformStamped pose;
+		tf::transformStampedTFToMsg(transform, pose);
+		m_pubPose.publish(pose);
+
                 if (transform.getOrigin().z() <= m_startZ + 0.05) {
                     m_state = Idle;
                     geometry_msgs::Twist msg;
@@ -212,6 +246,9 @@ private:
             {
                 tf::StampedTransform transform;
                 m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
+		geometry_msgs::TransformStamped pose;
+		tf::transformStampedTFToMsg(transform, pose);
+		m_pubPose.publish(pose);
 
                 geometry_msgs::PoseStamped targetWorld;
                 targetWorld.header.stamp = transform.stamp_;
@@ -231,9 +268,14 @@ private:
                     )).getRPY(roll, pitch, yaw);
 
                 geometry_msgs::Twist msg;
+		//cout<<"Xerror: "<<targetDrone.pose.position.x<<endl;
+		//cout<<"Current yaw: "<<yaw<<endl;
                 msg.linear.x = m_pidX.update(0, targetDrone.pose.position.x)   + Joy_input.x;
                 msg.linear.y = m_pidY.update(0.0, targetDrone.pose.position.y) + Joy_input.y;
-                msg.linear.z = m_pidZ.update(0.0, targetDrone.pose.position.z) + Joy_input.z;
+                msg.linear.z = saturate(m_pidZ.update(0.0, targetDrone.pose.position.z) + Joy_input.z, 60000, 0);
+                #ifdef DIRECT_GE_COMPENSATE
+                msg.linear.z = compensate_GE(msg.linear.z, m_goal.pose.position.z);//pose.transform.translation.z+0.08);
+                #endif
                 msg.angular.z = m_pidYaw.update(0.0, yaw)                      + Joy_input.yaw;
                 m_pubNav.publish(msg);
 
@@ -242,6 +284,11 @@ private:
             break;
         case Idle:
             {
+	        tf::StampedTransform transform;
+                m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
+		geometry_msgs::TransformStamped pose;
+		tf::transformStampedTFToMsg(transform, pose);
+		m_pubPose.publish(pose);
                 geometry_msgs::Twist msg;
                 msg.linear.x  = Joy_input.x;
                 msg.linear.y  = Joy_input.y;
@@ -267,6 +314,7 @@ private:
     std::string m_worldFrame;
     std::string m_frame;
     ros::Publisher m_pubNav;
+    ros::Publisher m_pubPose;
     tf::TransformListener m_listener;
     PID m_pidX;
     PID m_pidY;

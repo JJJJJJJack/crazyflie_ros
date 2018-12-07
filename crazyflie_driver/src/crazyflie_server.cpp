@@ -10,6 +10,7 @@
 #include "crazyflie_driver/sendPacket.h"
 #include "crazyflie_driver/crtpPacket.h"
 #include "crazyflie_driver/ANDO.h"
+#include "crazyflie_driver/Battery.h"
 #include "crazyflie_cpp/Crazyradio.h"
 #include "crazyflie_cpp/crtp.h"
 #include "std_srvs/Empty.h"
@@ -88,6 +89,7 @@ public:
     , m_pubPressure()
     , m_pubBattery()
     , m_pubANDO()
+    , m_pubExtBat()
     , m_pubRssi()
     , m_sentSetpoint(false)
     , m_sentExternalPosition(false)
@@ -187,6 +189,11 @@ private:
     uint32_t M2;
     uint32_t M3;
     uint32_t M4;
+  } __attribute__((packed));
+
+  struct logExtBat {
+    float extVbat;
+    float extCurr;
   } __attribute__((packed));
 
 private:
@@ -330,7 +337,7 @@ private:
       m_pubPressure = n.advertise<std_msgs::Float32>(m_tf_prefix + "/pressure", 10);
     }
     if (m_enable_logging_battery) {
-      m_pubBattery = n.advertise<std_msgs::Float32>(m_tf_prefix + "/battery", 10);
+      m_pubBattery = n.advertise<std_msgs::Float32>(m_tf_prefix + "/internal_battery", 10);
     }
     if (m_enable_logging_packets) {
       m_pubPackets = n.advertise<crazyflie_driver::crtpPacket>(m_tf_prefix + "/packets", 10);
@@ -338,6 +345,7 @@ private:
     if (m_enable_logging_ando) {
       m_pubANDO = n.advertise<crazyflie_driver::ANDO>(m_tf_prefix + "/ANDO", 10);
     }
+    m_pubExtBat = n.advertise<crazyflie_driver::Battery>(m_tf_prefix + "/ExtBat", 10);
     m_pubRssi = n.advertise<std_msgs::Float32>(m_tf_prefix + "/rssi", 10);
 
     for (auto& logBlock : m_logBlocks)
@@ -397,6 +405,7 @@ private:
     std::unique_ptr<LogBlock<logDHAT> > logBlockDHAT;
     std::unique_ptr<LogBlock<logCompensatePWM> > logBlockCompensatePWM;
     std::unique_ptr<LogBlock<logMOTOR> > logBlockMOTOR;
+    std::unique_ptr<LogBlock<logExtBat> > logBlockExtBat;
     std::vector<std::unique_ptr<LogBlockGeneric> > logBlocksGeneric(m_logBlocks.size());
     if (m_enableLogging) {
 
@@ -425,7 +434,7 @@ private:
           || m_enable_logging_magnetic_field
           || m_enable_logging_pressure
           || m_enable_logging_battery)
-      {
+	{
         std::function<void(uint32_t, log2*)> cb2 = std::bind(&CrazyflieROS::onLog2Data, this, std::placeholders::_1, std::placeholders::_2);
 
         logBlock2.reset(new LogBlock<log2>(
@@ -472,6 +481,17 @@ private:
           }, cbmotor));
         logBlockMOTOR->start(2); // 20ms 50Hz
       }
+
+      if (true)// Always logging external Vbat
+	{
+	  std::function<void(uint32_t, logExtBat*)> cbExtBat = std::bind(&CrazyflieROS::onLogExtBatData, this, std::placeholders::_1, std::placeholders::_2);
+	  logBlockExtBat.reset(new LogBlock<logExtBat>(
+          &m_cf,{
+            {"pm", "extVbat"},
+            {"pm", "extCurr"},
+          }, cbExtBat));
+        logBlockExtBat->start(2); // 20ms 50Hz
+	}
 
       // custom log blocks
       size_t i = 0;
@@ -643,6 +663,15 @@ private:
     }
   }
 
+  void onLogExtBatData(uint32_t time_in_ms, logExtBat* data) {
+    crazyflie_driver::Battery m_ExtBat;
+    m_ExtBat.header.stamp = ros::Time::now();
+    m_ExtBat.voltage = data->extVbat;
+    m_ExtBat.current = data->extCurr;
+    m_ExtBat.power   = m_ExtBat.voltage * m_ExtBat.current;
+    m_pubExtBat.publish(m_ExtBat);
+  }
+
   void onLogCustom(uint32_t time_in_ms, std::vector<double>* values, void* userData) {
 
     ros::Publisher* pub = reinterpret_cast<ros::Publisher*>(userData);
@@ -704,6 +733,7 @@ private:
   ros::Publisher m_pubBattery;
   ros::Publisher m_pubPackets;
   ros::Publisher m_pubANDO;
+  ros::Publisher m_pubExtBat;
   ros::Publisher m_pubRssi;
   std::vector<ros::Publisher> m_pubLogDataGeneric;
 

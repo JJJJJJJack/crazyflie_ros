@@ -43,6 +43,7 @@ add_message_files(
   FullState.msg
   crtpPacket.msg
   ANDO.msg
+  Battery.msg
 )
 
 ## Generate added messages and services with any dependencies listed here

@@ -12,6 +12,8 @@
 #include <fstream>
 #include <vector>
 #include <numeric>
+#include "lowpass.h"
+#include <crazyflie_driver/Battery.h>
 
 #define QUE_LEN 50
 
@@ -20,9 +22,11 @@ using namespace std;
 float loadcell = 0;
 float h_start = 0, h_step = 0, h_end = 0;
 float height = 0;
+float power = 0, raw_power = 0;
 int pwm1, pwm2, param_rate;
 string testName;
 bool UseLASER = false;
+bool LogPower = false;
 vector<float> v_loadcell;
 
 void loadcell_callback(const std_msgs::Float64& msg)
@@ -41,6 +45,11 @@ void height_callback(const std_msgs::Float64& msg)
 {
   if(UseLASER)
     height = msg.data;
+}
+
+void power_callback(const crazyflie_driver::Battery& Bat)
+{
+  raw_power = Bat.power;
 }
 
 bool loadcell_check(float tolerance)
@@ -77,6 +86,7 @@ int main(int argc, char **argv)
   ros::Publisher  pub_ready = nh.advertise<std_msgs::Bool>("reading_ready", 5);
   ros::Subscriber sub_loadcell = nh.subscribe("/loadcell", 1, loadcell_callback);
   ros::Subscriber sub_height   = nh.subscribe("/height", 1, height_callback);
+  ros::Subscriber sub_power    = nh.subscribe("/crazyflie/ExtBat", 1, power_callback);
 
   n.getParam("startHeight", h_start);
   n.getParam("stepHeight", h_step);
@@ -86,6 +96,7 @@ int main(int argc, char **argv)
   n.getParam("PWM2", pwm2);
   n.getParam("testName", testName);
   n.getParam("laserheight", UseLASER);
+  n.getParam("logging_power", LogPower);
 
   ofstream fileHandle;
   string filePath = "/home/urc_admin/Documents/darc/XH/data/";
@@ -94,6 +105,7 @@ int main(int argc, char **argv)
 
   ros::Rate loop_rate(param_rate);
 
+  LOWPASS LP_power(-20., 3e+2, 1, "power");
   cout<<endl<<"Writing into file: "<<filePath<<endl<<endl;
 
   tf::TransformListener tfListener;
@@ -159,8 +171,11 @@ int main(int argc, char **argv)
 	    geometry_msgs::Twist msg_cmd;
 	    msg_cmd.linear.z = 0;
 	    pub_cmd.publish(msg_cmd);
-	    // Write the height and loadcell value
-	    fileHandle<<zd<<", "<<final_loadcell - init_loadcell<<endl;
+	    // Write height, loadcell and battery power value
+	    if(LogPower == true)
+	      fileHandle<<zd<<", "<<final_loadcell - init_loadcell<<", "<<power<<endl;
+	    else
+	      fileHandle<<zd<<", "<<final_loadcell - init_loadcell<<endl;
 	    ROS_INFO("Done.");
 	  }else{
 	    ROS_INFO_STREAM_THROTTLE(1,"Waiting loadcell reading.");
@@ -191,6 +206,7 @@ int main(int argc, char **argv)
 
       }
       
+      power = LP_power.filter(raw_power);
       ros::spinOnce();
       loop_rate.sleep();
       ++count;
