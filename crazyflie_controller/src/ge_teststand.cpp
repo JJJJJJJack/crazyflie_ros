@@ -190,13 +190,13 @@ int main(int argc, char **argv)
 	    zd += h_step;
 	  }else if(fabs(zd - h_end)<h_step/2.0 && UP){
 	    UP = false;
-	    sleep(2);
+	    sleep(4);
 	  }else if(zd > h_start+h_step/2.0){
 	    zd -= h_step;
 	  }else if(PWM == pwm1){// Only has two PWM inputs
 	    UP = true;
 	    PWM = pwm2;
-	    sleep(2);
+	    sleep(4);
 	  }else
 	    ros::shutdown();
 	  StartTest = true;
