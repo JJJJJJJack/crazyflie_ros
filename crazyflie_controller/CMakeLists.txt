@@ -6,6 +6,7 @@ set (CMAKE_CXX_STANDARD 11)
 find_package(catkin REQUIRED COMPONENTS
   std_msgs
   tf
+  crazyflie_driver
 )
 
 ## System dependencies are found with CMake's conventions
@@ -80,7 +81,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES crazyflie_controller
-#  CATKIN_DEPENDS other_catkin_pkg
+   CATKIN_DEPENDS crazyflie_driver
 #  DEPENDS system_lib
 )
 
@@ -108,6 +109,10 @@ add_executable(crazyflie_LQRcontroller
 
 add_executable(ge_teststand
   src/ge_teststand.cpp)
+
+add_dependencies(crazyflie_controller ${catkin_EXPORTED_TARGETS})
+add_dependencies(crazyflie_LQRcontroller ${catkin_EXPORTED_TARGETS})
+add_dependencies(ge_teststand ${catkin_EXPORTED_TARGETS})
 
 # Add cmake target dependencies of the executable/library
 # as an example, message headers may need to be generated before nodes

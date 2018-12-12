@@ -148,6 +148,7 @@ int main(int argc, char **argv)
 	  // Wait until the loadcell is ready
 	  if(ReadingReady == true){
 	    init_loadcell = loadcell_read();
+	    ROS_INFO("Initial loadcell reading: %f", init_loadcell);
 	    StartTest = false;
 	    v_loadcell.clear();
 	    // Mark start time
@@ -165,9 +166,17 @@ int main(int argc, char **argv)
 	}else{
 	  //cout<<"Current dt "<<dt<<endl;
 	  //cout<<"Reading Ready is "<<ReadingReady<<endl;
-	  if((dt > 3 && ReadingReady) || dt > 8){
+	  if(fabs(loadcell_read()-init_loadcell) < 0.2){
+	    // reset start time if no loadcell increase detected.
+	    startTime = ros::Time::now();
+	    geometry_msgs::Twist msg_cmd;
+	    msg_cmd.linear.z = PWM;
+	    pub_cmd.publish(msg_cmd);
+	  }
+	  if((dt > 4 && ReadingReady) || dt > 8){
 	    MeasureDone = true;
 	    final_loadcell = loadcell_read();
+	    ROS_INFO("Final loadcell reading: %f", final_loadcell);
 	    geometry_msgs::Twist msg_cmd;
 	    msg_cmd.linear.z = 0;
 	    pub_cmd.publish(msg_cmd);
