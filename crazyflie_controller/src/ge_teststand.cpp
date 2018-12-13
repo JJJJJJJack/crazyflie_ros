@@ -14,6 +14,7 @@
 #include <numeric>
 #include "lowpass.h"
 #include <crazyflie_driver/Battery.h>
+#include <crazyflie_driver/UpdateParams.h>
 
 #define QUE_LEN 50
 
@@ -84,9 +85,10 @@ int main(int argc, char **argv)
   ros::Publisher  pub_zd    = nh.advertise<std_msgs::Float64>("/zd", 5);
   ros::Publisher  pub_cmd   = nh.advertise<geometry_msgs::Twist>("cmd_vel", 5);
   ros::Publisher  pub_ready = nh.advertise<std_msgs::Bool>("reading_ready", 5);
-  ros::Subscriber sub_loadcell = nh.subscribe("/loadcell", 1, loadcell_callback);
-  ros::Subscriber sub_height   = nh.subscribe("/height", 1, height_callback);
-  ros::Subscriber sub_power    = nh.subscribe("/crazyflie/ExtBat", 1, power_callback);
+  ros::Subscriber sub_loadcell  = nh.subscribe("/loadcell", 1, loadcell_callback);
+  ros::Subscriber sub_height    = nh.subscribe("/height", 1, height_callback);
+  ros::Subscriber sub_power     = nh.subscribe("/crazyflie/ExtBat", 1, power_callback);
+  ros::ServiceClient serv_param = nh.serviceClient<crazyflie_driver::UpdateParams>("/crazyflie/update_params");
 
   n.getParam("startHeight", h_start);
   n.getParam("stepHeight", h_step);
@@ -97,9 +99,12 @@ int main(int argc, char **argv)
   n.getParam("testName", testName);
   n.getParam("laserheight", UseLASER);
   n.getParam("logging_power", LogPower);
+  n.setParam("/crazyflie/GE_ANDO/GETEST_ENABLE",true);
 
   ofstream fileHandle;
-  string filePath = "/home/urc_admin/Documents/darc/XH/data/";
+  string filePath = "/home/";
+  filePath.append(getenv("USER"));
+  filePath.append("/Documents/darc/XH/data/");
   filePath.append(testName);filePath.append(".txt");
   fileHandle.open(filePath.c_str());
 
@@ -112,11 +117,13 @@ int main(int argc, char **argv)
   if(!UseLASER)
     tfListener.waitForTransform("vicon/baseboard/baseboard", "vicon/upsidedown/upsidedown", ros::Time(0), ros::Duration(10.0));
   int count = 0;
-  float zd = h_start, init_loadcell, final_loadcell, dt;
-  bool UP = true, StartTest = true, ReadingReady = false, MeasureDone = false;
+  float zd = h_start, init_loadcell, final_loadcell, dt, wait_dt;
+  bool UP = true, StartTest = true, ReadingReady = false, MeasureDone = false, Enable_GE = false;
   int PWM = pwm1;
-  ros::Time startTime, currentTime;
+  geometry_msgs::Twist msg_cmd;
+  ros::Time startTime, currentTime, waitTime;
   startTime = ros::Time::now();
+  waitTime = ros::Time::now();
   while (ros::ok())
     {
       //Define maximum tolerance in percentage
@@ -127,21 +134,21 @@ int main(int argc, char **argv)
       pub_ready.publish(msg_ready);
       tf::StampedTransform transform, board;
       if(!UseLASER){
-	tfListener.lookupTransform("vicon/baseboard/baseboard", "vicon/upsidedown/upsidedown", ros::Time(0), transform);
-	tfListener.lookupTransform("/world", "vicon/baseboard/baseboard", ros::Time(0), board);
-	height = transform.getOrigin().z();
+      	tfListener.lookupTransform("vicon/baseboard/baseboard", "vicon/upsidedown/upsidedown", ros::Time(0), transform);
+      	tfListener.lookupTransform("/world", "vicon/baseboard/baseboard", ros::Time(0), board);
+      	height = transform.getOrigin().z();
       }
       float board_z = board.getOrigin().z();
       currentTime = ros::Time::now();
       dt = currentTime.toSec() - startTime.toSec();
+      wait_dt = currentTime.toSec() - waitTime.toSec();
       if(fabs(height-zd) > 0.002 && StartTest == true && dt<45){
-	// Do nothing until reaching desired height
-	std_msgs::Float64 msg_zd;
-	msg_zd.data = zd+board_z;
-	pub_zd.publish(msg_zd);
-	geometry_msgs::Twist msg_cmd;
-	msg_cmd.linear.z = 0;
-	pub_cmd.publish(msg_cmd);
+	     // Do nothing until reaching desired height
+      	std_msgs::Float64 msg_zd;
+      	msg_zd.data = zd+board_z;
+      	pub_zd.publish(msg_zd);
+      	msg_cmd.linear.z = 0;
+      	pub_cmd.publish(msg_cmd);
       }else{
 	// Mark the initial value when test started
 	if(StartTest == true){
@@ -153,15 +160,22 @@ int main(int argc, char **argv)
 	    v_loadcell.clear();
 	    // Mark start time
 	    startTime = ros::Time::now();
-	    geometry_msgs::Twist msg_cmd;
-	    msg_cmd.linear.z = PWM;
-	    pub_cmd.publish(msg_cmd);
+      waitTime =  ros::Time::now();
 	    ROS_INFO("Motor start with PWM %d", PWM);
 	  }else{
-	    ROS_INFO_STREAM_THROTTLE(1,"Waiting 0 PWM loadcell reading.");
-	    geometry_msgs::Twist msg_cmd;
+	    ROS_INFO_STREAM_THROTTLE(5,"Waiting 0 PWM loadcell reading.");
 	    msg_cmd.linear.z = 0;
 	    pub_cmd.publish(msg_cmd);
+      if(Enable_GE == false){
+        //Setting up crazyflie to enable GE test
+        crazyflie_driver::UpdateParams param_server;
+        param_server.request.params.push_back(string("GE_ANDO/GETEST_ENABLE"));
+        if(serv_param.call(param_server)){
+          Enable_GE = param_server.response.result;
+        }else{
+          Enable_GE = false;
+        }
+      }
 	  }
 	}else{
 	  //cout<<"Current dt "<<dt<<endl;
@@ -169,15 +183,16 @@ int main(int argc, char **argv)
 	  if(fabs(loadcell_read()-init_loadcell) < 0.2){
 	    // reset start time if no loadcell increase detected.
 	    startTime = ros::Time::now();
-	    geometry_msgs::Twist msg_cmd;
-	    msg_cmd.linear.z = PWM;
+	    if(msg_cmd.linear.z < PWM)
+        msg_cmd.linear.z += 500;
+      else
+        msg_cmd.linear.z = PWM;
 	    pub_cmd.publish(msg_cmd);
 	  }
 	  if((dt > 4 && ReadingReady) || dt > 8){
 	    MeasureDone = true;
 	    final_loadcell = loadcell_read();
 	    ROS_INFO("Final loadcell reading: %f", final_loadcell);
-	    geometry_msgs::Twist msg_cmd;
 	    msg_cmd.linear.z = 0;
 	    pub_cmd.publish(msg_cmd);
 	    // Write height, loadcell and battery power value
@@ -187,10 +202,20 @@ int main(int argc, char **argv)
 	      fileHandle<<zd<<", "<<final_loadcell - init_loadcell<<endl;
 	    ROS_INFO("Done.");
 	  }else{
-	    ROS_INFO_STREAM_THROTTLE(1,"Waiting loadcell reading.");
-	    geometry_msgs::Twist msg_cmd;
-	    msg_cmd.linear.z = PWM;
+	    ROS_INFO_STREAM_THROTTLE(5,"Waiting loadcell reading.");
+	    if(msg_cmd.linear.z < PWM)
+        msg_cmd.linear.z += 500;
+      else
+        msg_cmd.linear.z = PWM;
 	    pub_cmd.publish(msg_cmd);
+      if(wait_dt > 15){
+        // We wait long enough, should restart the process
+        msg_cmd.linear.z = 0;
+        pub_cmd.publish(msg_cmd);
+        ROS_WARN_STREAM_THROTTLE(1,"Restarting this PWM.");
+        waitTime = ros::Time::now();
+        sleep(10);
+      }
 	  }
 	}
 

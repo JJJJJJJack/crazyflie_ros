@@ -251,6 +251,7 @@ private:
             updateParam<float, float>(entry->id, ros_param);
             break;
         }
+        res.result = true;
       }
       else {
         ROS_ERROR("Could not find param %s/%s", group.c_str(), name.c_str());
@@ -358,13 +359,14 @@ private:
     // m_cf.reboot();
 
     auto start = std::chrono::system_clock::now();
-    std::cout<<"Up to here!!!!!"<<std::endl<<std::endl;
+
     m_cf.logReset();
 
     std::function<void(float)> cb_lq = std::bind(&CrazyflieROS::onLinkQuality, this, std::placeholders::_1);
+
     m_cf.setLinkQualityCallback(cb_lq);
 
-
+    std::cerr<<std::endl<<"Up to here!!!!!"<<std::endl<<std::endl;
 
     if (m_enableParameters)
     {
@@ -696,8 +698,8 @@ private:
   }
 
   void onLinkQuality(float linkQuality) {
-      if (linkQuality < 0.7) {
-        ROS_WARN_THROTTLE(1,"Link Quality low (%f)", linkQuality);
+      if (linkQuality < 0.5) {
+        ROS_WARN_THROTTLE(10,"Link Quality low (%f)", linkQuality);
       }
   }
 
