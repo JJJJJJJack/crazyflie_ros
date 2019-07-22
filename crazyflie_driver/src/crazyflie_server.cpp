@@ -218,7 +218,7 @@ private:
     crazyflie_driver::UpdateParams::Request& req,
     crazyflie_driver::UpdateParams::Response& res)
   {
-    ROS_INFO("Update parameters");
+    //ROS_INFO_THROTTLE(10, "Update parameters");
     for (auto&& p : req.params) {
       std::string ros_param = "/" + m_tf_prefix + "/" + p;
       size_t pos = p.find("/");

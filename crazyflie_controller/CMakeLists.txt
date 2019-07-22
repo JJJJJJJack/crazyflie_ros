@@ -112,10 +112,14 @@ add_executable(crazyflie_LQRcontroller
 add_executable(ge_teststand
   src/ge_teststand.cpp)
 
+add_executable(test_run
+  src/test_run.cpp)
+
+
 add_dependencies(crazyflie_controller ${catkin_EXPORTED_TARGETS})
 add_dependencies(crazyflie_LQRcontroller ${catkin_EXPORTED_TARGETS})
 add_dependencies(ge_teststand ${catkin_EXPORTED_TARGETS})
-
+add_dependencies(test_run ${catkin_EXPORTED_TARGETS})
 # Add cmake target dependencies of the executable/library
 # as an example, message headers may need to be generated before nodes
 # add_dependencies(crazyflie_controller crazyflie_controller_generate_messages_cpp)
@@ -133,6 +137,9 @@ target_link_libraries(ge_teststand
   ${catkin_LIBRARIES}
 )
 
+target_link_libraries(test_run
+  ${catkin_LIBRARIES}
+)
 
 #############
 ## Install ##
