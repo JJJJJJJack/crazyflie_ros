@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ros/ros.h>
+#include "LPfilter.h"
 
 class PID
 {
@@ -24,6 +25,7 @@ public:
         , m_integral(0)
         , m_previousError(0)
         , m_previousTime(ros::Time::now())
+	, d_filter(40, 0.02)
     {
     }
 
@@ -37,6 +39,16 @@ public:
     void setIntegral(float integral)
     {
         m_integral = integral;
+    }
+
+    float saturate(float input, float max, float min)
+    {
+      if(input > max)
+	return max;
+      else if(input < min)
+	return min;
+      else
+	return input;
     }
 
     float ki() const
@@ -53,9 +65,10 @@ public:
         m_integral = std::max(std::min(m_integral, m_integratorMax), m_integratorMin);
         float p = m_kp * error;
         float d = 0;
+	float d_error = (error - m_previousError) / dt;
         if (dt > 0)
         {
-            d = m_kd * (error - m_previousError) / dt;
+	  d = m_kd * d_filter.update(saturate(d_error, 3.2, -3.2), dt);
         }
         float i = m_ki * m_integral;
         float output = p + d + i;
@@ -80,7 +93,7 @@ public:
         float d = 0;
         if (dt > 0)
         {
-            d = m_kd * derivative;
+	  d = m_kd * d_filter.update(derivative, dt);
         }
         float i = m_ki * m_integral;
         float output = p + d + i;
@@ -95,14 +108,15 @@ public:
     }
 
 private:
-    float m_kp;
-    float m_kd;
-    float m_ki;
-    float m_minOutput;
-    float m_maxOutput;
-    float m_integratorMin;
-    float m_integratorMax;
-    float m_integral;
-    float m_previousError;
-    ros::Time m_previousTime;
+  float m_kp;
+  float m_kd;
+  float m_ki;
+  float m_minOutput;
+  float m_maxOutput;
+  float m_integratorMin;
+  float m_integratorMax;
+  float m_integral;
+  float m_previousError;
+  ros::Time m_previousTime;
+  LPfilter d_filter;
 };

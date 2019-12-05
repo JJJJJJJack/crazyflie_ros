@@ -95,6 +95,7 @@ catkin_package(
 ## Your package locations should be listed before other locations
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  utility
 )
 
 ## Declare a cpp library
@@ -112,6 +113,12 @@ add_executable(crazyflie_LQRcontroller
 add_executable(ge_teststand
   src/ge_teststand.cpp)
 
+add_executable(advance_ratio_teststand
+  src/advance_ratio_teststand.cpp)
+
+add_executable(beam_speed_publisher
+  src/beam_speed_publisher.cpp)
+
 add_executable(test_run
   src/test_run.cpp)
 
@@ -119,6 +126,8 @@ add_executable(test_run
 add_dependencies(crazyflie_controller ${catkin_EXPORTED_TARGETS})
 add_dependencies(crazyflie_LQRcontroller ${catkin_EXPORTED_TARGETS})
 add_dependencies(ge_teststand ${catkin_EXPORTED_TARGETS})
+add_dependencies(advance_ratio_teststand ${catkin_EXPORTED_TARGETS})
+add_dependencies(beam_speed_publisher ${catkin_EXPORTED_TARGETS})
 add_dependencies(test_run ${catkin_EXPORTED_TARGETS})
 # Add cmake target dependencies of the executable/library
 # as an example, message headers may need to be generated before nodes
@@ -134,6 +143,14 @@ target_link_libraries(crazyflie_LQRcontroller
 )
 
 target_link_libraries(ge_teststand
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(advance_ratio_teststand
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(beam_speed_publisher
   ${catkin_LIBRARIES}
 )
 

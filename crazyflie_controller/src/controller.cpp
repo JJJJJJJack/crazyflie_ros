@@ -9,8 +9,9 @@
 #include <cmath>
 
 #include "pid.hpp"
+#include "LPfilter.h"
 
-#define DIRECT_GE_COMPENSATE
+//#define DIRECT_GE_COMPENSATE
 
 using namespace std;
 
@@ -87,11 +88,16 @@ public:
         , m_serviceLand()
         , m_thrust(0)
         , m_startZ(0)
+      , x_filter(20, 0.05)
+      , y_filter(20, 0.05)
+      , z_filter(20, 0.05)
+      , yaw_filter(20, 0.05)
     {
         ros::NodeHandle nh;
         m_listener.waitForTransform(m_worldFrame, m_frame, ros::Time(0), ros::Duration(10.0)); 
         m_pubNav = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
 	m_pubPose = nh.advertise<geometry_msgs::TransformStamped>("pose", 1);
+	m_pubError = nh.advertise<geometry_msgs::Vector3>("error", 1);
         m_subscribeGoal = nh.subscribe("goal", 1, &Controller::goalChanged, this);
         m_subscribeJoy  = nh.subscribe("joy", 1, &Controller::subscribeJoy, this);
         m_serviceTakeoff = nh.advertiseService("takeoff", &Controller::takeoff, this);
@@ -182,7 +188,12 @@ private:
   
     float saturate(float input, float max, float min)
     {
-      return (input>max?max:input)<min?min:input;
+      if(input > max)
+	return max;
+      else if(input < min)
+	return min;
+      else
+	return input;
     }
 
     float compensate_GE(float input, float height)
@@ -208,12 +219,13 @@ private:
 		tf::transformStampedTFToMsg(transform, pose);
 		m_pubPose.publish(pose);
 
-                if (transform.getOrigin().z() > m_startZ + 0.05 || m_thrust > 50000)
+                if (transform.getOrigin().z() > m_startZ + 0.02 || m_thrust > 40000)
                 {
                     pidReset();
                     m_pidZ.setIntegral(m_thrust / m_pidZ.ki());
                     m_state = Automatic;
                     m_thrust = 0;
+		    cout<<"Successfully takeoff!"<<endl;
                 }
                 else
                 {
@@ -257,6 +269,10 @@ private:
 
                 geometry_msgs::PoseStamped targetDrone;
                 m_listener.transformPose(m_frame, targetWorld, targetDrone);
+		//Overwrite the xyz error
+	        targetDrone.pose.position.x = m_goal.pose.position.x - pose.transform.translation.x;
+		targetDrone.pose.position.y = m_goal.pose.position.y - pose.transform.translation.y;
+		targetDrone.pose.position.z = m_goal.pose.position.z - pose.transform.translation.z;
 
                 tfScalar roll, pitch, yaw;
                 tf::Matrix3x3(
@@ -268,15 +284,28 @@ private:
                     )).getRPY(roll, pitch, yaw);
 
                 geometry_msgs::Twist msg;
-		//cout<<"Xerror: "<<targetDrone.pose.position.x<<endl;
+		//cout<<"P error: "<<targetDrone.pose.position.x<<" "<<targetDrone.pose.position.y<<" "<<targetDrone.pose.position.z<<endl;
 		//cout<<"Current yaw: "<<yaw<<endl;
+		// Saturate the maximum error
+		targetDrone.pose.position.x = x_filter.update(saturate(targetDrone.pose.position.x, 1.2, -1.2));
+		targetDrone.pose.position.y = y_filter.update(saturate(targetDrone.pose.position.y, 1.2, -1.2));
+		targetDrone.pose.position.z = z_filter.update(saturate(targetDrone.pose.position.z, 0.8, -0.8));
+		yaw = yaw_filter.update(saturate(yaw, 20, -20));
+
+		
+		geometry_msgs::Vector3 error;
+		error.x = targetDrone.pose.position.x;
+		error.y = targetDrone.pose.position.y;
+		error.z = targetDrone.pose.position.z;
+		m_pubError.publish(error);
+
                 msg.linear.x = m_pidX.update(0, targetDrone.pose.position.x)   + Joy_input.x;
                 msg.linear.y = m_pidY.update(0.0, targetDrone.pose.position.y) + Joy_input.y;
                 msg.linear.z = saturate(m_pidZ.update(0.0, targetDrone.pose.position.z) + Joy_input.z, 60000, 0);
                 #ifdef DIRECT_GE_COMPENSATE
                 msg.linear.z = compensate_GE(msg.linear.z, m_goal.pose.position.z);//pose.transform.translation.z+0.08);
                 #endif
-                msg.angular.z = m_pidYaw.update(0.0, yaw)                      + Joy_input.yaw;
+                msg.angular.z = saturate(m_pidYaw.update(0.0, yaw)                      + Joy_input.yaw, 20, -20);
                 m_pubNav.publish(msg);
 
 
@@ -315,6 +344,7 @@ private:
     std::string m_frame;
     ros::Publisher m_pubNav;
     ros::Publisher m_pubPose;
+    ros::Publisher m_pubError;
     tf::TransformListener m_listener;
     PID m_pidX;
     PID m_pidY;
@@ -329,6 +359,11 @@ private:
     ros::ServiceServer m_serviceLand;
     float m_thrust;
     float m_startZ;
+  LPfilter x_filter;
+  LPfilter y_filter;
+  LPfilter z_filter;
+  LPfilter yaw_filter;
+
 };
 
 int main(int argc, char **argv)
