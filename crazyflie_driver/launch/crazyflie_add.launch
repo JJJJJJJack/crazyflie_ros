@@ -13,6 +13,8 @@
   <arg name="enable_logging_pressure" default="True" />
   <arg name="enable_logging_battery" default="True" />
   <arg name="enable_logging_packets" default="True" />
+  <arg name="enable_logging_ando" default="False" />
+  <arg name="enable_logging_angle" default="True" />
 
   <node pkg="crazyflie_driver" type="crazyflie_add" name="crazyflie_add" output="screen">
     <param name="uri" value="$(arg uri)" />
@@ -27,5 +29,7 @@
     <param name="enable_logging_pressure" value="$(arg enable_logging_pressure)" />
     <param name="enable_logging_battery" value="$(arg enable_logging_battery)" />
     <param name="enable_logging_packets" value="$(arg enable_logging_packets)"/>
+    <param name="enable_logging_ando" value="$(arg enable_logging_ando)"/>
+    <param name="enable_logging_angle" value="$(arg enable_logging_angle)"/>
   </node>
 </launch>

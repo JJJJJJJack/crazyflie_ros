@@ -21,6 +21,10 @@
 #include "sensor_msgs/MagneticField.h"
 #include "std_msgs/Float32.h"
 
+// Adding TF2 here
+//#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf/transform_datatypes.h>
+
 //#include <regex>
 #include <thread>
 #include <mutex>
@@ -59,7 +63,8 @@ public:
     bool enable_logging_pressure,
     bool enable_logging_battery,
     bool enable_logging_packets,
-    bool enable_logging_ando)
+    bool enable_logging_ando,
+    bool enable_logging_angle)
     : m_cf(link_uri)
     , m_tf_prefix(tf_prefix)
     , m_isEmergency(false)
@@ -78,6 +83,7 @@ public:
     , m_enable_logging_battery(enable_logging_battery)
     , m_enable_logging_packets(enable_logging_packets)
     , m_enable_logging_ando(enable_logging_ando)
+    , m_enable_logging_angle(enable_logging_angle)
     , m_serviceEmergency()
     , m_serviceUpdateParams()
     , m_subscribeCmdVel()
@@ -91,6 +97,7 @@ public:
     , m_pubANDO()
     , m_pubExtBat()
     , m_pubRssi()
+    , imu_msg()
     , m_sentSetpoint(false)
     , m_sentExternalPosition(false)
   {
@@ -159,6 +166,12 @@ private:
     float gyro_x;
     float gyro_y;
     float gyro_z;
+  } __attribute__((packed));
+
+  struct logAngle {
+    float roll;
+    float pitch;
+    float yaw;
   } __attribute__((packed));
 
   struct log2 {
@@ -325,7 +338,7 @@ private:
     m_subscribeExternalPosition = n.subscribe(m_tf_prefix + "/external_position", 1, &CrazyflieROS::positionMeasurementChanged, this);
     m_serviceEmergency = n.advertiseService(m_tf_prefix + "/emergency", &CrazyflieROS::emergency, this);
 
-    if (m_enable_logging_imu) {
+    if (m_enable_logging_imu || m_enable_logging_angle) {
       m_pubImu = n.advertise<sensor_msgs::Imu>(m_tf_prefix + "/imu", 10);
     }
     if (m_enable_logging_temperature) {
@@ -361,7 +374,7 @@ private:
     auto start = std::chrono::system_clock::now();
 
     m_cf.logReset();
-    std::cerr<<std::endl<<"Up to here!!!!!"<<std::endl<<std::endl;
+    
     std::function<void(float)> cb_lq = std::bind(&CrazyflieROS::onLinkQuality, this, std::placeholders::_1);
 
     m_cf.setLinkQualityCallback(cb_lq);
@@ -401,6 +414,7 @@ private:
     }
 
     std::unique_ptr<LogBlock<logImu> > logBlockImu;
+    std::unique_ptr<LogBlock<logAngle> > logBlockAngle;
     std::unique_ptr<LogBlock<log2> > logBlock2;
     std::unique_ptr<LogBlock<logDHAT> > logBlockDHAT;
     std::unique_ptr<LogBlock<logCompensatePWM> > logBlockCompensatePWM;
@@ -428,6 +442,19 @@ private:
             {"gyro", "z"},
           }, cb));
         logBlockImu->start(1); // 10ms
+      }
+
+      if (m_enable_logging_angle) {
+	//std::cerr<<std::endl<<"Up to here!!!!!"<<std::endl<<std::endl;
+        std::function<void(uint32_t, logAngle*)> cbAngle = std::bind(&CrazyflieROS::onAngleData, this, std::placeholders::_1, std::placeholders::_2);
+
+        logBlockAngle.reset(new LogBlock<logAngle>(
+          &m_cf,{
+            {"stabilizer", "roll"},
+	    {"stabilizer", "pitch"},
+	    {"stabilizer", "yaw"},
+          }, cbAngle));
+        logBlockAngle->start(1); // 10ms
       }
 
       if (   m_enable_logging_temperature
@@ -553,26 +580,35 @@ private:
 
   void onImuData(uint32_t time_in_ms, logImu* data) {
     if (m_enable_logging_imu) {
-      sensor_msgs::Imu msg;
       if (m_use_ros_time) {
-        msg.header.stamp = ros::Time::now();
+        imu_msg.header.stamp = ros::Time::now();
       } else {
-        msg.header.stamp = ros::Time(time_in_ms / 1000.0);
+        imu_msg.header.stamp = ros::Time(time_in_ms / 1000.0);
       }
-      msg.header.frame_id = m_tf_prefix + "/base_link";
-      msg.orientation_covariance[0] = -1;
+      imu_msg.header.frame_id = m_tf_prefix + "/base_link";
+      imu_msg.orientation_covariance[0] = -1;
 
       // measured in deg/s; need to convert to rad/s
-      msg.angular_velocity.x = degToRad(data->gyro_x);
-      msg.angular_velocity.y = degToRad(data->gyro_y);
-      msg.angular_velocity.z = degToRad(data->gyro_z);
+      imu_msg.angular_velocity.x = degToRad(data->gyro_x);
+      imu_msg.angular_velocity.y = degToRad(data->gyro_y);
+      imu_msg.angular_velocity.z = degToRad(data->gyro_z);
 
       // measured in mG; need to convert to m/s^2
-      msg.linear_acceleration.x = data->acc_x * 9.81;
-      msg.linear_acceleration.y = data->acc_y * 9.81;
-      msg.linear_acceleration.z = data->acc_z * 9.81;
+      imu_msg.linear_acceleration.x = data->acc_x * 9.81;
+      imu_msg.linear_acceleration.y = data->acc_y * 9.81;
+      imu_msg.linear_acceleration.z = data->acc_z * 9.81;
 
-      m_pubImu.publish(msg);
+      m_pubImu.publish(imu_msg);
+    }
+  }
+
+  void onAngleData(uint32_t time_in_ms, logAngle* data) {
+    if (m_enable_logging_angle){
+      tf::Quaternion q = tf::createQuaternionFromRPY(data->roll, data->pitch, data->yaw);
+      imu_msg.orientation.x = q.x();
+      imu_msg.orientation.y = q.y();
+      imu_msg.orientation.z = q.z();
+      imu_msg.orientation.w = q.w();
     }
   }
 
@@ -720,6 +756,7 @@ private:
   bool m_enable_logging_battery;
   bool m_enable_logging_packets;
   bool m_enable_logging_ando;
+  bool m_enable_logging_angle;
 
   ros::ServiceServer m_serviceEmergency;
   ros::ServiceServer m_serviceUpdateParams;
@@ -736,6 +773,7 @@ private:
   ros::Publisher m_pubExtBat;
   ros::Publisher m_pubRssi;
   std::vector<ros::Publisher> m_pubLogDataGeneric;
+  sensor_msgs::Imu imu_msg;
 
   bool m_sentSetpoint, m_sentExternalPosition;
 
@@ -779,7 +817,8 @@ bool add_crazyflie(
     req.enable_logging_pressure,
     req.enable_logging_battery,
     req.enable_logging_packets,
-    req.enable_logging_ando);
+    req.enable_logging_ando,
+    req.enable_logging_angle);
 
   crazyflies[req.uri] = cf;
 

@@ -13,4 +13,5 @@ bool enable_logging_pressure
 bool enable_logging_battery
 bool enable_logging_packets
 bool enable_logging_ando
+bool enable_logging_angle
 ---
