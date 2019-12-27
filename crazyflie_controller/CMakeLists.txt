@@ -9,7 +9,8 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   tf
   crazyflie_driver
-)
+  )
+find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -95,6 +96,7 @@ catkin_package(
 ## Your package locations should be listed before other locations
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIR}
   utility
 )
 
@@ -123,12 +125,17 @@ add_executable(test_run
   src/test_run.cpp)
 
 
+add_executable(partial_GE
+  src/partial_GE.cpp)
+
+
 add_dependencies(crazyflie_controller ${catkin_EXPORTED_TARGETS})
 add_dependencies(crazyflie_LQRcontroller ${catkin_EXPORTED_TARGETS})
 add_dependencies(ge_teststand ${catkin_EXPORTED_TARGETS})
 add_dependencies(advance_ratio_teststand ${catkin_EXPORTED_TARGETS})
 add_dependencies(beam_speed_publisher ${catkin_EXPORTED_TARGETS})
 add_dependencies(test_run ${catkin_EXPORTED_TARGETS})
+add_dependencies(partial_GE ${catkin_EXPORTED_TARGETS})
 # Add cmake target dependencies of the executable/library
 # as an example, message headers may need to be generated before nodes
 # add_dependencies(crazyflie_controller crazyflie_controller_generate_messages_cpp)
@@ -155,6 +162,10 @@ target_link_libraries(beam_speed_publisher
 )
 
 target_link_libraries(test_run
+  ${catkin_LIBRARIES}
+  )
+
+target_link_libraries(partial_GE
   ${catkin_LIBRARIES}
 )
 

@@ -32,6 +32,7 @@
 #include <string>
 #include <map>
 #include <cstdint>
+#include <math.h>
 
 #include <crazyflie_cpp/Crazyflie.h>
 
@@ -604,7 +605,7 @@ private:
 
   void onAngleData(uint32_t time_in_ms, logAngle* data) {
     if (m_enable_logging_angle){
-      tf::Quaternion q = tf::createQuaternionFromRPY(data->roll, data->pitch, data->yaw);
+      tf::Quaternion q = tf::createQuaternionFromRPY(data->roll/180.0*M_PI, data->pitch/180.0*M_PI, data->yaw/180.0*M_PI);
       imu_msg.orientation.x = q.x();
       imu_msg.orientation.y = q.y();
       imu_msg.orientation.z = q.z();
