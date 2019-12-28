@@ -151,9 +151,20 @@ if __name__ == '__main__':
             accumulate_v = _accumulateV(accumulate_v, vel, trans_hand, trans_quad)
             last_hand = trans_hand
             
-            msg.pose.position.x = _saturate(quad_goal[0] + v[0] + accumulate_v[0], 3.0, -1.6)
-            msg.pose.position.y = _saturate(quad_goal[1] + v[1] + accumulate_v[1], 1.8, -1.4)
-            msg.pose.position.z = _saturate(trans_hand[2], 2.3, 0.4)
+            #msg.pose.position.x = _saturate(quad_goal[0] + v[0] + accumulate_v[0], 3.0, -1.6)
+            #msg.pose.position.y = _saturate(quad_goal[1] + v[1] + accumulate_v[1], 1.8, -1.4)
+            
+            #msg.pose.position.x = _saturate(trans_hand[0]+1.5, 3.0, -1.6)
+            #msg.pose.position.y = _saturate(trans_hand[1]+1.5, 1.8, -1.4)
+            #msg.pose.position.z = _saturate(trans_hand[2], 2.3, 0.0)
+            # Radius
+            R = 1;
+            trajx = R*math.sin(0.2*msg.header.seq/r)
+            trajy = R*math.cos(0.2*msg.header.seq/r)
+            trajz = 0.64;
+            msg.pose.position.x = trajx
+            msg.pose.position.y = trajy
+            msg.pose.position.z = trajz
         pub.publish(msg)
         try:
             (trans_quad,rot_quad) = listener.lookupTransform("/world", "/vicon/Jackquad/Jackquad", rospy.Time(0))

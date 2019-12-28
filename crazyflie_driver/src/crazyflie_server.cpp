@@ -20,6 +20,7 @@
 #include "sensor_msgs/Temperature.h"
 #include "sensor_msgs/MagneticField.h"
 #include "std_msgs/Float32.h"
+#include "std_msgs/Float32MultiArray.h"
 
 // Adding TF2 here
 //#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -88,6 +89,7 @@ public:
     , m_serviceEmergency()
     , m_serviceUpdateParams()
     , m_subscribeCmdVel()
+    , m_subscribePartialGE()
     , m_subscribeCmdFullState()
     , m_subscribeExternalPosition()
     , m_pubImu()
@@ -274,6 +276,24 @@ private:
     return true;
   }
 
+  void partialGEChanged(
+    const std_msgs::Float32MultiArray& msg){
+    if (!m_isEmergency) {
+      auto entry = m_cf.getParamTocEntry("partialGE", "partialGEm1");
+      float partialm1 = msg.data[0];
+      m_cf.setParam<float>(entry->id, partialm1);
+      entry = m_cf.getParamTocEntry("partialGE", "partialGEm2");
+      float partialm2 = msg.data[1];
+      m_cf.setParam<float>(entry->id, partialm2);
+      entry = m_cf.getParamTocEntry("partialGE", "partialGEm3");
+      float partialm3 = msg.data[2];
+      m_cf.setParam<float>(entry->id, partialm3);
+      entry = m_cf.getParamTocEntry("partialGE", "partialGEm4");
+      float partialm4 = msg.data[3];
+      m_cf.setParam<float>(entry->id, partialm4);
+    }
+  }
+
   void cmdVelChanged(
     const geometry_msgs::Twist::ConstPtr& msg)
   {
@@ -335,6 +355,7 @@ private:
     n.setCallbackQueue(&m_callback_queue);
 
     m_subscribeCmdVel = n.subscribe(m_tf_prefix + "/cmd_vel", 1, &CrazyflieROS::cmdVelChanged, this);
+    m_subscribePartialGE = n.subscribe(m_tf_prefix + "/partial_GE", 1, &CrazyflieROS::partialGEChanged, this);
     m_subscribeCmdFullState = n.subscribe(m_tf_prefix + "/cmd_full_state", 1, &CrazyflieROS::cmdFullStateSetpoint, this);
     m_subscribeExternalPosition = n.subscribe(m_tf_prefix + "/external_position", 1, &CrazyflieROS::positionMeasurementChanged, this);
     m_serviceEmergency = n.advertiseService(m_tf_prefix + "/emergency", &CrazyflieROS::emergency, this);
@@ -762,6 +783,7 @@ private:
   ros::ServiceServer m_serviceEmergency;
   ros::ServiceServer m_serviceUpdateParams;
   ros::Subscriber m_subscribeCmdVel;
+  ros::Subscriber m_subscribePartialGE;
   ros::Subscriber m_subscribeCmdFullState;
   ros::Subscriber m_subscribeExternalPosition;
   ros::Publisher m_pubImu;
